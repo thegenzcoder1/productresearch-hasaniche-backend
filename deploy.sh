@@ -12,6 +12,28 @@ echo "======================================"
 echo "📂 Moving to $APP_DIR..."
 cd $APP_DIR || { echo "❌ Error: Directory not found!"; exit 1; }
 
+# ── DATA SAFETY: back up the SQLite DB + uploads BEFORE deploying ──────────
+# data/ and uploads/ are git-ignored, so git pull / npm install never touch them,
+# but we snapshot them first so any deploy is fully recoverable.
+BACKUP_DIR="$APP_DIR/backups"
+STAMP=$(date +%Y%m%d-%H%M%S)
+mkdir -p "$BACKUP_DIR" "$APP_DIR/data" "$APP_DIR/uploads"
+
+echo "🗃️  Backing up persistent data (pre-deploy snapshot $STAMP)..."
+if [ -f "$APP_DIR/data/app.db" ]; then
+  cp "$APP_DIR/data/app.db" "$BACKUP_DIR/app-$STAMP.db"
+  echo "   ✔ data/app.db  -> backups/app-$STAMP.db"
+else
+  echo "   ℹ️  No data/app.db yet (first deploy?) — nothing to back up."
+fi
+if [ -n "$(ls -A "$APP_DIR/uploads" 2>/dev/null)" ]; then
+  tar -czf "$BACKUP_DIR/uploads-$STAMP.tar.gz" -C "$APP_DIR" uploads
+  echo "   ✔ uploads/     -> backups/uploads-$STAMP.tar.gz"
+fi
+# Keep only the 10 most recent backups of each kind
+ls -1t "$BACKUP_DIR"/app-*.db        2>/dev/null | tail -n +11 | xargs -r rm -f
+ls -1t "$BACKUP_DIR"/uploads-*.tar.gz 2>/dev/null | tail -n +11 | xargs -r rm -f
+
 # Pull the latest code
 echo "⬇️  Pulling latest code from GitHub (origin/main)..."
 git pull origin main || { echo "❌ Error: Git pull failed!"; exit 1; }
@@ -27,6 +49,14 @@ pm2 restart $PM2_APP_NAME || pm2 start server.js --name $PM2_APP_NAME
 
 # Wait a second for it to boot
 sleep 2
+
+# Confirm the persistent data is still in place after the deploy
+echo "🔎 Verifying data retention..."
+if [ -f "$APP_DIR/data/app.db" ]; then
+  echo "   ✔ data/app.db present ($(du -h "$APP_DIR/data/app.db" | cut -f1)), $(ls -1 "$APP_DIR/uploads" 2>/dev/null | wc -l) file(s) in uploads/"
+else
+  echo "   ℹ️  data/app.db not found yet — it will be created on first boot."
+fi
 
 # Log the contents of the .env file
 echo "📄 Checking .env configuration..."
