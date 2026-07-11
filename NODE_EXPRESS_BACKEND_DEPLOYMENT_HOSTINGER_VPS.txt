@@ -1,0 +1,190 @@
+🚀 Node.js/Express Backend Deployment on Hostinger VPS (HTTPS)
+
+Prerequisites
+- Hostinger VPS purchased
+- Domain name available (researchapi.hasaniche.com)
+- GitHub repository ready for this backend (e.g., git@github.com:yourusername/productresearch-hasaniche-backend.git)
+- App configured to listen on PORT 5011 (Check your .env or server.js file)
+- NOTE: This backend stores data in an embedded SQLite file (data/app.db) and product
+  images in uploads/ — both live on the VPS disk. There is NO remote database.
+
+1️⃣ SSH INTO VPS (ROOT)
+From Windows PowerShell / Terminal:
+
+ssh root@<YOUR_VPS_IP>
+
+👉 Accept fingerprint by typing yes
+👉 Enter root password (you will NOT see characters while typing – this is normal)
+
+2️⃣ CREATE A NON-ROOT DEPLOY USER (SECURITY)
+adduser deploy
+usermod -aG sudo deploy
+
+Switch to deploy user:
+su - deploy
+
+3️⃣ UPDATE SERVER
+sudo apt update && sudo apt upgrade -y
+
+4️⃣ INSTALL NODE.JS (LTS)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+Verify:
+node -v
+npm -v
+
+*(better-sqlite3 is a native module. It normally installs a prebuilt binary, but if
+ npm install ever tries to compile it, install build tools first:
+ sudo apt install -y build-essential python3)*
+
+5️⃣ INSTALL PM2 (PROCESS MANAGER)
+sudo npm install -g pm2
+
+6️⃣ INSTALL NGINX (REVERSE PROXY)
+sudo apt install -y nginx
+sudo systemctl start nginx
+sudo systemctl enable nginx
+
+Test:
+curl http://localhost
+
+7️⃣ CONFIGURE FIREWALL (UFW)
+sudo ufw allow OpenSSH
+sudo ufw allow 80
+sudo ufw allow 443
+sudo ufw enable
+sudo ufw status
+
+*(Note: We do not need to open port 5011 to the public, Nginx will handle routing internally)*
+
+8️⃣ CLONE BACKEND APP FROM GITHUB
+mkdir -p ~/apps
+cd ~/apps
+git clone git@github.com:yourusername/productresearch-hasaniche-backend.git
+cd productresearch-hasaniche-backend
+
+Install dependencies:
+npm install
+
+Provide your Environment Variables:
+nano .env
+(Paste the variables below, then save and exit: CTRL+O, ENTER, CTRL+X)
+
+  PORT=5011
+  JWT_SECRET=<64-char-random-string>
+  ADMIN_USER=hariharan
+  ADMIN_PASSWORD=<strong-password>
+  NODE_ENV=production
+  # Leave DISABLE_CORS unset (or false) in production — see note below.
+
+🚨 IMPORTANT — RE-ENABLE CORS FOR PRODUCTION
+During local testing CORS was opened up. Before going live, edit server.js and restore the
+locked-down CORS block (the commented block that regex-limits origins to hasaniche.com and its
+subdomains), replacing the temporary `app.use(cors())`. Make sure DISABLE_CORS is NOT 'true'.
+This ensures only https://research.hasaniche.com (and other *.hasaniche.com) can call the API.
+
+🗄️ DATA PERSISTENCE (SQLite + uploads)
+data/ (app.db) and uploads/ (images) are git-ignored, so `git pull` and `npm install` never
+touch them — your database and images survive every deploy. BACK THEM UP regularly, e.g.:
+  cp ~/apps/productresearch-hasaniche-backend/data/app.db ~/backups/app-$(date +%F).db
+
+9️⃣ START BACKEND WITH PM2
+
+To Run:
+node server.js
+
+Start the server file:
+pm2 start server.js --name "product-research-backend"
+
+Check:
+pm2 list
+
+🔟 ENABLE PM2 AUTO-START ON REBOOT
+pm2 startup
+
+👉 Copy the command PM2 shows and run it (example):
+sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u deploy --hp /home/deploy
+
+Save process:
+pm2 save
+
+1️⃣1️⃣ SET DOMAIN DNS (HOSTINGER PANEL)
+
+🚨 IMPORTANT: Having duplicate records will break your API routing!
+In Hostinger DNS Zone Editor, set up your sub-domain record for researchapi.hasaniche.com.
+
+👉 Add NEW A Record:
+Type    Host            Value           TTL
+A       researchapi     <YOUR_VPS_IP>   Auto
+
+Wait 1–5 minutes.
+
+1️⃣2️⃣ CREATE NGINX CONFIG FOR BACKEND
+sudo nano /etc/nginx/sites-available/researchapi.hasaniche.com
+
+Paste:
+
+server {
+    listen 80;
+    server_name researchapi.hasaniche.com;
+
+    client_max_body_size 12M;   # allow product image uploads (10MB limit in the app)
+
+    location / {
+        proxy_pass http://localhost:5011;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+Save & exit nano:
+CTRL + O → ENTER → CTRL + X
+
+Enable site:
+sudo ln -s /etc/nginx/sites-available/researchapi.hasaniche.com /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+Check If Site is Enabled:
+sudo ls -l /etc/nginx/sites-enabled/
+
+Test:
+http://researchapi.hasaniche.com/health
+
+1️⃣3️⃣ INSTALL CERTBOT (SSL)
+sudo apt install -y certbot python3-certbot-nginx
+
+1️⃣4️⃣ ENABLE HTTPS (LET’S ENCRYPT)
+sudo certbot --nginx -d researchapi.hasaniche.com
+
+✔ Choose Redirect HTTP → HTTPS when prompted
+
+1️⃣5️⃣ VERIFY HTTPS
+Open browser or Postman and hit:
+https://researchapi.hasaniche.com/health
+
+1️⃣6️⃣ FINAL HEALTH CHECK
+pm2 list
+sudo systemctl status nginx
+
+Reboot test:
+sudo reboot
+
+Reconnect and confirm:
+su - deploy
+pm2 list
+
+✅ DEPLOYMENT COMPLETE 🎉
+- Node.js Express API running via PM2
+- Nginx reverse proxy routing port 80/443 to 5011 with proper forwarding headers
+- HTTPS enabled via Certbot
+- Auto-restart on reboot configured
+- Secure firewall
+- SQLite data & uploads persist across deploys (remember to back them up)
