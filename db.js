@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS products (
   id                       INTEGER PRIMARY KEY AUTOINCREMENT,
   name                     TEXT NOT NULL,
   image_path               TEXT,
+  image_path_2             TEXT,
+  image_path_3             TEXT,
+  image_path_4             TEXT,
   description              TEXT,
   pain_point               TEXT,
   amazon_sold_last_month   INTEGER,
@@ -31,6 +34,7 @@ CREATE TABLE IF NOT EXISTS products (
   sourcing_cost            REAL,
   mrp                      REAL,
   amazon_rating            REAL,
+  amazon_avg_price         REAL,
   status                   TEXT NOT NULL DEFAULT 'active',
   rank_position            INTEGER,
   saved_rank_position      INTEGER,
@@ -58,7 +62,19 @@ CREATE TABLE IF NOT EXISTS ad_links (
   url        TEXT NOT NULL,
   label      TEXT,
   impression INTEGER,
+  days_old   TEXT,
+  ad_type    TEXT,
   status     TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Competitor / product-page links, each with the price listed there
+CREATE TABLE IF NOT EXISTS product_links (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  label      TEXT,
+  price      REAL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -84,9 +100,15 @@ const productCols = db.prepare(`PRAGMA table_info(products)`).all().map((c) => c
 if (!productCols.includes('sourcing_cost')) db.exec(`ALTER TABLE products ADD COLUMN sourcing_cost REAL`);
 if (!productCols.includes('mrp')) db.exec(`ALTER TABLE products ADD COLUMN mrp REAL`);
 if (!productCols.includes('amazon_rating')) db.exec(`ALTER TABLE products ADD COLUMN amazon_rating REAL`);
+if (!productCols.includes('amazon_avg_price')) db.exec(`ALTER TABLE products ADD COLUMN amazon_avg_price REAL`);
+if (!productCols.includes('image_path_2')) db.exec(`ALTER TABLE products ADD COLUMN image_path_2 TEXT`);
+if (!productCols.includes('image_path_3')) db.exec(`ALTER TABLE products ADD COLUMN image_path_3 TEXT`);
+if (!productCols.includes('image_path_4')) db.exec(`ALTER TABLE products ADD COLUMN image_path_4 TEXT`);
 
 const adLinkCols = db.prepare(`PRAGMA table_info(ad_links)`).all().map((c) => c.name);
 if (!adLinkCols.includes('impression')) db.exec(`ALTER TABLE ad_links ADD COLUMN impression INTEGER`);
+if (!adLinkCols.includes('days_old')) db.exec(`ALTER TABLE ad_links ADD COLUMN days_old TEXT`);
+if (!adLinkCols.includes('ad_type')) db.exec(`ALTER TABLE ad_links ADD COLUMN ad_type TEXT`);
 
 // Seed / sync admin user on boot.
 // .env is the source of truth: if the admin user already exists, keep its

@@ -35,9 +35,11 @@ router.get('/', (_req, res) => {
   `).all();
   const tagStmt = db.prepare(`SELECT tag FROM tags WHERE product_id=?`);
   const angleStmt = db.prepare(`SELECT angle FROM ad_angles WHERE product_id=? ORDER BY id`);
+  const plStmt = db.prepare(`SELECT * FROM product_links WHERE product_id=? ORDER BY id`);
   for (const r of rows) {
     r.tags = tagStmt.all(r.id).map((t) => t.tag);
     r.ad_angles = angleStmt.all(r.id).map((a) => a.angle);
+    r.product_links = plStmt.all(r.id);
   }
   res.json(rows);
 });
@@ -62,6 +64,7 @@ router.get('/:id', (req, res) => {
   p.suppliers = db.prepare(`SELECT * FROM suppliers WHERE product_id=? ORDER BY id`).all(id);
   p.tags = db.prepare(`SELECT * FROM tags WHERE product_id=? ORDER BY id`).all(id);
   p.ad_links = db.prepare(`SELECT * FROM ad_links WHERE product_id=? ORDER BY id`).all(id);
+  p.product_links = db.prepare(`SELECT * FROM product_links WHERE product_id=? ORDER BY id`).all(id);
   p.ad_angles = db.prepare(`SELECT * FROM ad_angles WHERE product_id=? ORDER BY id`).all(id);
   p.comments = db.prepare(`SELECT * FROM comments WHERE product_id=? ORDER BY created_at DESC, id DESC`).all(id);
   res.json(p);
@@ -85,7 +88,8 @@ router.post('/', (req, res) => {
 router.patch('/:id', (req, res) => {
   const allowed = ['name', 'description', 'pain_point',
                    'amazon_sold_last_month', 'ig_impressions_6m',
-                   'sourcing_cost', 'mrp', 'amazon_rating'];
+                   'sourcing_cost', 'mrp', 'amazon_rating', 'amazon_avg_price',
+                   'image_path', 'image_path_2', 'image_path_3', 'image_path_4'];
   const fields = Object.keys(req.body || {}).filter((k) => allowed.includes(k));
   if (!fields.length) return res.status(400).json({ error: 'No valid fields' });
   const set = fields.map((f) => `${f} = @${f}`).join(', ');
@@ -108,7 +112,8 @@ router.put('/:id/full', (req, res) => {
 
   const scalarAllowed = ['name', 'description', 'pain_point',
                          'amazon_sold_last_month', 'ig_impressions_6m',
-                         'sourcing_cost', 'mrp', 'amazon_rating'];
+                         'sourcing_cost', 'mrp', 'amazon_rating', 'amazon_avg_price',
+                         'image_path', 'image_path_2', 'image_path_3', 'image_path_4'];
 
   const save = db.transaction(() => {
     // product scalar fields (only those provided)
@@ -133,12 +138,21 @@ router.put('/:id/full', (req, res) => {
     }
     if (Array.isArray(b.ad_links)) {
       db.prepare(`DELETE FROM ad_links WHERE product_id=?`).run(id);
-      const ins = db.prepare(`INSERT INTO ad_links (product_id, url, label, impression, status, created_at)
-                              VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`);
+      const ins = db.prepare(`INSERT INTO ad_links (product_id, url, label, impression, days_old, ad_type, status, created_at)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`);
       for (const l of b.ad_links) if (l && String(l.url || '').trim())
         ins.run(id, String(l.url).trim(), l.label ? String(l.label) : null,
                 l.impression == null || l.impression === '' ? null : Number(l.impression),
+                l.days_old ? String(l.days_old) : null,
+                l.ad_type ? String(l.ad_type) : null,
                 l.status === 'done' ? 'done' : 'pending', l.created_at || null);
+    }
+    if (Array.isArray(b.product_links)) {
+      db.prepare(`DELETE FROM product_links WHERE product_id=?`).run(id);
+      const ins = db.prepare(`INSERT INTO product_links (product_id, url, label, price) VALUES (?, ?, ?, ?)`);
+      for (const l of b.product_links) if (l && String(l.url || '').trim())
+        ins.run(id, String(l.url).trim(), l.label ? String(l.label) : null,
+                l.price == null || l.price === '' ? null : Number(l.price));
     }
     if (Array.isArray(b.ad_angles)) {
       db.prepare(`DELETE FROM ad_angles WHERE product_id=?`).run(id);
@@ -181,13 +195,12 @@ router.delete('/:id/permanent', (req, res) => {
   res.json({ ok: true });
 });
 
-// Image upload / replace
+// Image upload — stores the file and returns its path. The path is persisted
+// to the product (any of the 4 slots) by the draft "full" save, so nothing is
+// written to the DB here.
 router.post('/:id/image', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image (jpg/png/webp/gif, <=10MB)' });
-  const rel = `/uploads/${req.file.filename}`;
-  db.prepare(`UPDATE products SET image_path=?, updated_at=datetime('now') WHERE id=?`)
-    .run(rel, req.params.id);
-  res.json({ image_path: rel });
+  res.json({ image_path: `/uploads/${req.file.filename}` });
 });
 
 module.exports = router;
