@@ -43,9 +43,24 @@ git pull origin main || { echo "❌ Error: Git pull failed!"; exit 1; }
 echo "📦 Installing npm dependencies..."
 npm install || { echo "❌ Error: npm install failed!"; exit 1; }
 
-# Restart the PM2 process (using restart instead of start ensures it reloads gracefully if already running)
-echo "🔄 Restarting API in PM2..."
-pm2 restart $PM2_APP_NAME || pm2 start server.js --name $PM2_APP_NAME
+# ── Load the LATEST .env and hand it to PM2 on every deploy ────────────────
+# The app also reads .env via dotenv at startup, but PM2 caches the environment
+# from the first `pm2 start`, and dotenv won't override an already-set variable.
+# So we export the current .env into the shell and restart with --update-env,
+# guaranteeing your freshly-edited .env values are applied every single deploy.
+echo "🔑 Loading environment from .env..."
+if [ -f "$APP_DIR/.env" ]; then
+  set -a                 # auto-export everything we source
+  . "$APP_DIR/.env"      # load the current .env into this shell
+  set +a
+  echo "   ✔ .env loaded into deploy environment"
+else
+  echo "   ⚠️  Warning: .env not found — the app will fall back to defaults!"
+fi
+
+# Restart with --update-env so PM2 replaces its cached env with the fresh one
+echo "🔄 Restarting API in PM2 (with fresh .env)..."
+pm2 restart $PM2_APP_NAME --update-env || pm2 start server.js --name $PM2_APP_NAME --update-env
 
 # Wait a second for it to boot
 sleep 2
