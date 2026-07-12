@@ -7,7 +7,6 @@ const path = require('path');
 
 const auth = require('./auth/middleware');
 const startCleanup = require('./lib/cleanup');
-const { UPLOAD_DIR } = require('./lib/paths');
 
 const app = express();
 
@@ -47,7 +46,7 @@ if (process.env.DISABLE_CORS === 'true') {
 --------------------------------------------------------------------- */
 
 // Static uploads
-app.use('/uploads', express.static(UPLOAD_DIR));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Health
 app.get('/health', (_req, res) => res.json({ ok: true }));
