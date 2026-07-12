@@ -82,14 +82,20 @@ const productCols = db.prepare(`PRAGMA table_info(products)`).all().map((c) => c
 if (!productCols.includes('sourcing_cost')) db.exec(`ALTER TABLE products ADD COLUMN sourcing_cost REAL`);
 if (!productCols.includes('mrp')) db.exec(`ALTER TABLE products ADD COLUMN mrp REAL`);
 
-// Seed admin user on boot
+// Seed / sync admin user on boot.
+// .env is the source of truth: if the admin user already exists, keep its
+// password in sync with ADMIN_PASSWORD so changing .env + restart actually
+// updates the login password (otherwise the first-boot password sticks forever).
 const adminUser = process.env.ADMIN_USER || 'admin';
 const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
+const hash = bcrypt.hashSync(adminPass, 12);
 const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(adminUser);
 if (!existing) {
-  db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)')
-    .run(adminUser, bcrypt.hashSync(adminPass, 12));
+  db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(adminUser, hash);
   console.log(`[db] seeded admin user "${adminUser}"`);
+} else {
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, existing.id);
+  console.log(`[db] admin user "${adminUser}" password synced from .env`);
 }
 
 module.exports = db;

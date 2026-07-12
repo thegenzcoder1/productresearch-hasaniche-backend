@@ -10,6 +10,11 @@ const startCleanup = require('./lib/cleanup');
 
 const app = express();
 
+// Behind the Nginx reverse proxy: trust the first proxy hop so req.ip and
+// express-rate-limit read the real client IP from X-Forwarded-For.
+// '1' = trust exactly one proxy (Nginx), which is safe for rate limiting.
+app.set('trust proxy', 1);
+
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(express.json({ limit: '1mb' }));
 
