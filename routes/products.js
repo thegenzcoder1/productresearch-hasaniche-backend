@@ -4,9 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../db');
 const { archive, restore } = require('../lib/ranking');
-
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const { UPLOAD_DIR } = require('../lib/paths');
 
 const storage = multer.diskStorage({
   destination: UPLOAD_DIR,

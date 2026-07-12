@@ -1,12 +1,9 @@
 // SQLite connection + schema migration + admin seed
 require('dotenv').config();
 const path = require('path');
-const fs = require('fs');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
-
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const { DATA_DIR } = require('./lib/paths');
 
 const db = new Database(path.join(DATA_DIR, 'app.db'));
 db.pragma('journal_mode = WAL');

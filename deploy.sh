@@ -12,26 +12,42 @@ echo "======================================"
 echo "📂 Moving to $APP_DIR..."
 cd $APP_DIR || { echo "❌ Error: Directory not found!"; exit 1; }
 
-# ── DATA SAFETY: back up the SQLite DB + uploads BEFORE deploying ──────────
-# data/ and uploads/ are git-ignored, so git pull / npm install never touch them,
-# but we snapshot them first so any deploy is fully recoverable.
-BACKUP_DIR="$APP_DIR/backups"
-STAMP=$(date +%Y%m%d-%H%M%S)
-mkdir -p "$BACKUP_DIR" "$APP_DIR/data" "$APP_DIR/uploads"
-
-echo "🗃️  Backing up persistent data (pre-deploy snapshot $STAMP)..."
-if [ -f "$APP_DIR/data/app.db" ]; then
-  cp "$APP_DIR/data/app.db" "$BACKUP_DIR/app-$STAMP.db"
-  echo "   ✔ data/app.db  -> backups/app-$STAMP.db"
+# ── Load .env FIRST so we know where the persistent data actually lives ────
+echo "🔑 Loading environment from .env..."
+if [ -f "$APP_DIR/.env" ]; then
+  set -a                 # auto-export everything we source
+  . "$APP_DIR/.env"      # load the current .env into this shell
+  set +a
+  echo "   ✔ .env loaded"
 else
-  echo "   ℹ️  No data/app.db yet (first deploy?) — nothing to back up."
+  echo "   ⚠️  Warning: .env not found — using defaults (data will live INSIDE the repo!)."
+  echo "      Create .env with DATA_DIR / UPLOAD_DIR before running the app in production."
 fi
-if [ -n "$(ls -A "$APP_DIR/uploads" 2>/dev/null)" ]; then
-  tar -czf "$BACKUP_DIR/uploads-$STAMP.tar.gz" -C "$APP_DIR" uploads
-  echo "   ✔ uploads/     -> backups/uploads-$STAMP.tar.gz"
+
+# Resolve persistent paths (fall back to in-repo defaults if not set in .env)
+DATA_DIR="${DATA_DIR:-$APP_DIR/data}"
+UPLOAD_DIR="${UPLOAD_DIR:-$APP_DIR/uploads}"
+BACKUP_DIR="${BACKUP_DIR:-$(dirname "$DATA_DIR")/backups}"   # sits next to DATA_DIR (outside the repo when DATA_DIR is external)
+mkdir -p "$DATA_DIR" "$UPLOAD_DIR" "$BACKUP_DIR"
+echo "   📁 DATA_DIR=$DATA_DIR"
+echo "   📁 UPLOAD_DIR=$UPLOAD_DIR"
+echo "   📁 BACKUP_DIR=$BACKUP_DIR"
+
+# ── DATA SAFETY: back up the SQLite DB + uploads BEFORE deploying ──────────
+STAMP=$(date +%Y%m%d-%H%M%S)
+echo "🗃️  Backing up persistent data (pre-deploy snapshot $STAMP)..."
+if [ -f "$DATA_DIR/app.db" ]; then
+  cp "$DATA_DIR/app.db" "$BACKUP_DIR/app-$STAMP.db"
+  echo "   ✔ app.db  -> $BACKUP_DIR/app-$STAMP.db"
+else
+  echo "   ℹ️  No app.db yet (first deploy?) — nothing to back up."
+fi
+if [ -n "$(ls -A "$UPLOAD_DIR" 2>/dev/null)" ]; then
+  tar -czf "$BACKUP_DIR/uploads-$STAMP.tar.gz" -C "$(dirname "$UPLOAD_DIR")" "$(basename "$UPLOAD_DIR")"
+  echo "   ✔ uploads -> $BACKUP_DIR/uploads-$STAMP.tar.gz"
 fi
 # Keep only the 10 most recent backups of each kind
-ls -1t "$BACKUP_DIR"/app-*.db        2>/dev/null | tail -n +11 | xargs -r rm -f
+ls -1t "$BACKUP_DIR"/app-*.db         2>/dev/null | tail -n +11 | xargs -r rm -f
 ls -1t "$BACKUP_DIR"/uploads-*.tar.gz 2>/dev/null | tail -n +11 | xargs -r rm -f
 
 # Pull the latest code
@@ -39,26 +55,10 @@ echo "⬇️  Pulling latest code from GitHub (origin/main)..."
 git pull origin main || { echo "❌ Error: Git pull failed!"; exit 1; }
 
 # Install dependencies just in case the package.json changed
-# (data/ and uploads/ are git-ignored, so the SQLite DB & images are untouched)
 echo "📦 Installing npm dependencies..."
 npm install || { echo "❌ Error: npm install failed!"; exit 1; }
 
-# ── Load the LATEST .env and hand it to PM2 on every deploy ────────────────
-# The app also reads .env via dotenv at startup, but PM2 caches the environment
-# from the first `pm2 start`, and dotenv won't override an already-set variable.
-# So we export the current .env into the shell and restart with --update-env,
-# guaranteeing your freshly-edited .env values are applied every single deploy.
-echo "🔑 Loading environment from .env..."
-if [ -f "$APP_DIR/.env" ]; then
-  set -a                 # auto-export everything we source
-  . "$APP_DIR/.env"      # load the current .env into this shell
-  set +a
-  echo "   ✔ .env loaded into deploy environment"
-else
-  echo "   ⚠️  Warning: .env not found — the app will fall back to defaults!"
-fi
-
-# Restart with --update-env so PM2 replaces its cached env with the fresh one
+# Restart with --update-env so PM2 applies the fresh .env every deploy
 echo "🔄 Restarting API in PM2 (with fresh .env)..."
 pm2 restart $PM2_APP_NAME --update-env || pm2 start server.js --name $PM2_APP_NAME --update-env
 
@@ -67,10 +67,10 @@ sleep 2
 
 # Confirm the persistent data is still in place after the deploy
 echo "🔎 Verifying data retention..."
-if [ -f "$APP_DIR/data/app.db" ]; then
-  echo "   ✔ data/app.db present ($(du -h "$APP_DIR/data/app.db" | cut -f1)), $(ls -1 "$APP_DIR/uploads" 2>/dev/null | wc -l) file(s) in uploads/"
+if [ -f "$DATA_DIR/app.db" ]; then
+  echo "   ✔ app.db present ($(du -h "$DATA_DIR/app.db" | cut -f1)), $(ls -1 "$UPLOAD_DIR" 2>/dev/null | wc -l) file(s) in uploads/"
 else
-  echo "   ℹ️  data/app.db not found yet — it will be created on first boot."
+  echo "   ℹ️  app.db not found yet — it will be created on first boot."
 fi
 
 # Log the contents of the .env file
