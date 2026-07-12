@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS products (
   ig_impressions_6m        INTEGER,
   sourcing_cost            REAL,
   mrp                      REAL,
+  amazon_rating            REAL,
   status                   TEXT NOT NULL DEFAULT 'active',
   rank_position            INTEGER,
   saved_rank_position      INTEGER,
@@ -56,6 +57,7 @@ CREATE TABLE IF NOT EXISTS ad_links (
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   url        TEXT NOT NULL,
   label      TEXT,
+  impression INTEGER,
   status     TEXT NOT NULL DEFAULT 'pending',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -81,6 +83,10 @@ CREATE INDEX IF NOT EXISTS idx_adlinks_product      ON ad_links(product_id, stat
 const productCols = db.prepare(`PRAGMA table_info(products)`).all().map((c) => c.name);
 if (!productCols.includes('sourcing_cost')) db.exec(`ALTER TABLE products ADD COLUMN sourcing_cost REAL`);
 if (!productCols.includes('mrp')) db.exec(`ALTER TABLE products ADD COLUMN mrp REAL`);
+if (!productCols.includes('amazon_rating')) db.exec(`ALTER TABLE products ADD COLUMN amazon_rating REAL`);
+
+const adLinkCols = db.prepare(`PRAGMA table_info(ad_links)`).all().map((c) => c.name);
+if (!adLinkCols.includes('impression')) db.exec(`ALTER TABLE ad_links ADD COLUMN impression INTEGER`);
 
 // Seed / sync admin user on boot.
 // .env is the source of truth: if the admin user already exists, keep its

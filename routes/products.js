@@ -21,11 +21,14 @@ const upload = multer({
 
 const pendingCount = `(SELECT COUNT(*) FROM ad_links a
    WHERE a.product_id = p.id AND a.status = 'pending')`;
+// Total impressions = sum of every ad-link's impression for the product
+const totalImpressions = `(SELECT COALESCE(SUM(a.impression), 0) FROM ad_links a
+   WHERE a.product_id = p.id)`;
 
-// List active products (rank order) with pending_ads + tags
+// List active products (rank order) with pending_ads + total_impressions + tags + ad_angles
 router.get('/', (_req, res) => {
   const rows = db.prepare(`
-    SELECT p.*, ${pendingCount} AS pending_ads
+    SELECT p.*, ${pendingCount} AS pending_ads, ${totalImpressions} AS total_impressions
     FROM products p
     WHERE p.status='active'
     ORDER BY p.rank_position ASC
@@ -54,7 +57,7 @@ router.get('/archived', (_req, res) => {
 // One product with all sub-sections
 router.get('/:id', (req, res) => {
   const id = req.params.id;
-  const p = db.prepare(`SELECT p.*, ${pendingCount} AS pending_ads FROM products p WHERE p.id=?`).get(id);
+  const p = db.prepare(`SELECT p.*, ${pendingCount} AS pending_ads, ${totalImpressions} AS total_impressions FROM products p WHERE p.id=?`).get(id);
   if (!p) return res.status(404).json({ error: 'Not found' });
   p.suppliers = db.prepare(`SELECT * FROM suppliers WHERE product_id=? ORDER BY id`).all(id);
   p.tags = db.prepare(`SELECT * FROM tags WHERE product_id=? ORDER BY id`).all(id);
@@ -82,7 +85,7 @@ router.post('/', (req, res) => {
 router.patch('/:id', (req, res) => {
   const allowed = ['name', 'description', 'pain_point',
                    'amazon_sold_last_month', 'ig_impressions_6m',
-                   'sourcing_cost', 'mrp'];
+                   'sourcing_cost', 'mrp', 'amazon_rating'];
   const fields = Object.keys(req.body || {}).filter((k) => allowed.includes(k));
   if (!fields.length) return res.status(400).json({ error: 'No valid fields' });
   const set = fields.map((f) => `${f} = @${f}`).join(', ');
@@ -105,7 +108,7 @@ router.put('/:id/full', (req, res) => {
 
   const scalarAllowed = ['name', 'description', 'pain_point',
                          'amazon_sold_last_month', 'ig_impressions_6m',
-                         'sourcing_cost', 'mrp'];
+                         'sourcing_cost', 'mrp', 'amazon_rating'];
 
   const save = db.transaction(() => {
     // product scalar fields (only those provided)
@@ -130,10 +133,11 @@ router.put('/:id/full', (req, res) => {
     }
     if (Array.isArray(b.ad_links)) {
       db.prepare(`DELETE FROM ad_links WHERE product_id=?`).run(id);
-      const ins = db.prepare(`INSERT INTO ad_links (product_id, url, label, status, created_at)
-                              VALUES (?, ?, ?, ?, COALESCE(?, datetime('now')))`);
+      const ins = db.prepare(`INSERT INTO ad_links (product_id, url, label, impression, status, created_at)
+                              VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`);
       for (const l of b.ad_links) if (l && String(l.url || '').trim())
         ins.run(id, String(l.url).trim(), l.label ? String(l.label) : null,
+                l.impression == null || l.impression === '' ? null : Number(l.impression),
                 l.status === 'done' ? 'done' : 'pending', l.created_at || null);
     }
     if (Array.isArray(b.ad_angles)) {
