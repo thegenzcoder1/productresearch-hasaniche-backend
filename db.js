@@ -45,10 +45,12 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 CREATE TABLE IF NOT EXISTS suppliers (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  name       TEXT NOT NULL,
-  phone      TEXT
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id   INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  phone        TEXT,
+  price        REAL,
+  dropshipping INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -111,6 +113,10 @@ const adLinkCols = db.prepare(`PRAGMA table_info(ad_links)`).all().map((c) => c.
 if (!adLinkCols.includes('impression')) db.exec(`ALTER TABLE ad_links ADD COLUMN impression INTEGER`);
 if (!adLinkCols.includes('days_old')) db.exec(`ALTER TABLE ad_links ADD COLUMN days_old TEXT`);
 if (!adLinkCols.includes('ad_type')) db.exec(`ALTER TABLE ad_links ADD COLUMN ad_type TEXT`);
+
+const supplierCols = db.prepare(`PRAGMA table_info(suppliers)`).all().map((c) => c.name);
+if (!supplierCols.includes('price')) db.exec(`ALTER TABLE suppliers ADD COLUMN price REAL`);
+if (!supplierCols.includes('dropshipping')) db.exec(`ALTER TABLE suppliers ADD COLUMN dropshipping INTEGER NOT NULL DEFAULT 0`);
 
 // Seed / sync admin user on boot.
 // .env is the source of truth: if the admin user already exists, keep its

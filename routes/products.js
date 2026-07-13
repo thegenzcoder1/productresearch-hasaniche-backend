@@ -155,9 +155,11 @@ router.put('/:id/full', (req, res) => {
     // child collections — replace-all, but ONLY when the array is provided
     if (Array.isArray(b.suppliers)) {
       db.prepare(`DELETE FROM suppliers WHERE product_id=?`).run(id);
-      const ins = db.prepare(`INSERT INTO suppliers (product_id, name, phone) VALUES (?, ?, ?)`);
+      const ins = db.prepare(`INSERT INTO suppliers (product_id, name, phone, price, dropshipping) VALUES (?, ?, ?, ?, ?)`);
       for (const s of b.suppliers) if (s && String(s.name || '').trim())
-        ins.run(id, String(s.name).trim(), s.phone ? String(s.phone).trim() : null);
+        ins.run(id, String(s.name).trim(), s.phone ? String(s.phone).trim() : null,
+                s.price == null || s.price === '' ? null : Number(s.price),
+                s.dropshipping ? 1 : 0);
     }
     if (Array.isArray(b.tags)) {
       db.prepare(`DELETE FROM tags WHERE product_id=?`).run(id);
