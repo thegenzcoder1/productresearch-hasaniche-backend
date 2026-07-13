@@ -56,6 +56,32 @@ router.get('/archived', (_req, res) => {
   res.json(rows);
 });
 
+// Pending products — active products with missing details (unless marked complete).
+// Each returns the list of what's still missing.
+router.get('/pending', (_req, res) => {
+  const rows = db.prepare(
+    `SELECT * FROM products WHERE status='active' AND COALESCE(details_complete,0)=0 ORDER BY rank_position ASC`
+  ).all();
+  const count = (table) => db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE product_id=?`);
+  const adC = count('ad_links'), plC = count('product_links'), supC = count('suppliers'), tagC = count('tags');
+  const out = [];
+  for (const p of rows) {
+    const missing = [];
+    if (!p.image_path) missing.push('Main image');
+    if (!p.description) missing.push('Description');
+    if (p.sourcing_cost == null) missing.push('Sourcing cost');
+    if (p.mrp == null) missing.push('MRP');
+    if (p.amazon_rating == null) missing.push('Amazon rating');
+    if (p.amazon_avg_price == null) missing.push('Avg Amazon price');
+    if (adC.get(p.id).n === 0) missing.push('Ad link');
+    if (plC.get(p.id).n === 0) missing.push('Product link');
+    if (supC.get(p.id).n === 0) missing.push('Supplier');
+    if (tagC.get(p.id).n === 0) missing.push('Tags');
+    if (missing.length) out.push({ id: p.id, name: p.name, image_path: p.image_path, missing });
+  }
+  res.json(out);
+});
+
 // One product with all sub-sections
 router.get('/:id', (req, res) => {
   const id = req.params.id;
@@ -89,7 +115,8 @@ router.patch('/:id', (req, res) => {
   const allowed = ['name', 'description', 'pain_point',
                    'amazon_sold_last_month', 'ig_impressions_6m',
                    'sourcing_cost', 'mrp', 'amazon_rating', 'amazon_avg_price',
-                   'image_path', 'image_path_2', 'image_path_3', 'image_path_4'];
+                   'image_path', 'image_path_2', 'image_path_3', 'image_path_4',
+                   'details_complete'];
   const fields = Object.keys(req.body || {}).filter((k) => allowed.includes(k));
   if (!fields.length) return res.status(400).json({ error: 'No valid fields' });
   const set = fields.map((f) => `${f} = @${f}`).join(', ');
@@ -113,7 +140,8 @@ router.put('/:id/full', (req, res) => {
   const scalarAllowed = ['name', 'description', 'pain_point',
                          'amazon_sold_last_month', 'ig_impressions_6m',
                          'sourcing_cost', 'mrp', 'amazon_rating', 'amazon_avg_price',
-                         'image_path', 'image_path_2', 'image_path_3', 'image_path_4'];
+                         'image_path', 'image_path_2', 'image_path_3', 'image_path_4',
+                         'details_complete'];
 
   const save = db.transaction(() => {
     // product scalar fields (only those provided)

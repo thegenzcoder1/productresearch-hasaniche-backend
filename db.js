@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS products (
   mrp                      REAL,
   amazon_rating            REAL,
   amazon_avg_price         REAL,
+  details_complete         INTEGER NOT NULL DEFAULT 0,
   status                   TEXT NOT NULL DEFAULT 'active',
   rank_position            INTEGER,
   saved_rank_position      INTEGER,
@@ -104,6 +105,7 @@ if (!productCols.includes('amazon_avg_price')) db.exec(`ALTER TABLE products ADD
 if (!productCols.includes('image_path_2')) db.exec(`ALTER TABLE products ADD COLUMN image_path_2 TEXT`);
 if (!productCols.includes('image_path_3')) db.exec(`ALTER TABLE products ADD COLUMN image_path_3 TEXT`);
 if (!productCols.includes('image_path_4')) db.exec(`ALTER TABLE products ADD COLUMN image_path_4 TEXT`);
+if (!productCols.includes('details_complete')) db.exec(`ALTER TABLE products ADD COLUMN details_complete INTEGER NOT NULL DEFAULT 0`);
 
 const adLinkCols = db.prepare(`PRAGMA table_info(ad_links)`).all().map((c) => c.name);
 if (!adLinkCols.includes('impression')) db.exec(`ALTER TABLE ad_links ADD COLUMN impression INTEGER`);
